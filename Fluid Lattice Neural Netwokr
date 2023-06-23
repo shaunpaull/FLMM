@@ -1,0 +1,200 @@
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <cmath>
+#include <random>
+#include <algorithm>
+
+class FluidLatticeNeuralNetwork {
+public:
+    FluidLatticeNeuralNetwork(const std::vector<int>& layerSizes, double learningRate)
+        : layerSizes(layerSizes), learningRate(learningRate) {
+        initializeWeights();
+    }
+
+    std::vector<double> predict(const std::vector<double>& input) {
+        std::vector<double> activations = input;
+
+        for (int i = 1; i < numLayers; ++i) {
+            std::vector<double> newActivations(layerSizes[i]);
+
+            for (int j = 0; j < layerSizes[i]; ++j) {
+                double sum = 0.0;
+
+                for (int k = 0; k < layerSizes[i - 1]; ++k) {
+                    sum += activations[k] * weights[i - 1][j][k];
+                }
+
+                newActivations[j] = activationFunction(sum);
+            }
+
+            activations = newActivations;
+        }
+
+        return activations;
+    }
+
+    void train(const std::vector<std::vector<double>>& inputs,
+               const std::vector<std::vector<double>>& targets,
+               int numEpochs) {
+        for (int epoch = 0; epoch < numEpochs; ++epoch) {
+            double error = 0.0;
+
+            for (int i = 0; i < inputs.size(); ++i) {
+                std::vector<double> predicted = predict(inputs[i]);
+                std::vector<double> target = targets[i];
+
+                std::vector<double> errors(layerSizes.back());
+                for (int j = 0; j < layerSizes.back(); ++j) {
+                    errors[j] = target[j] - predicted[j];
+                }
+
+                for (int j = numLayers - 1; j > 0; --j) {
+                    std::vector<double> newErrors(layerSizes[j - 1]);
+
+                    for (int k = 0; k < layerSizes[j - 1]; ++k) {
+                        double errorSum = 0.0;
+
+                        for (int l = 0; l < layerSizes[j]; ++l) {
+                            errorSum += errors[l] * weights[j - 1][l][k];
+                        }
+
+                        newErrors[k] = errorSum;
+                    }
+
+                    errors = newErrors;
+                }
+
+                for (int j = 1; j < numLayers; ++j) {
+                    for (int k = 0; k < layerSizes[j]; ++k) {
+                        for (int l = 0; l < layerSizes[j - 1]; ++l) {
+                            weights[j - 1][k][l] += learningRate * (errors[k] * activationDerivative(predicted[k]) * inputs[i][l] - regularizationTerm * weights[j - 1][k][l]);
+                        }
+                    }
+                }
+
+                error += calculateError(predicted, target);
+            }
+
+            std::cout << "Epoch: " << epoch << ", Error: " << error << std::endl;
+
+            // Save the trained weights after each epoch
+            saveWeightsToFile("model_weights.txt");
+        }
+    }
+
+    bool loadWeightsFromFile(const std::string& filename) {
+        std::ifstream file(filename);
+        if (!file) {
+            std::cout << "Failed to open the file: " << filename << std::endl;
+            return false;
+        }
+
+        for (int i = 0; i < numLayers - 1; ++i) {
+            for (int j = 0; j < layerSizes[i + 1]; ++j) {
+                for (int k = 0; k < layerSizes[i]; ++k) {
+                    file >> weights[i][j][k];
+                }
+            }
+        }
+
+        return true;
+    }
+
+private:
+    std::vector<int> layerSizes;
+    std::vector<std::vector<std::vector<double>>> weights;
+    double learningRate;
+    int numLayers;
+    double regularizationTerm = 0.001; // Regularization term, adjust as needed
+
+    double activationFunction(double x) {
+        return std::max(0.0, x); // ReLU activation function
+    }
+
+    double activationDerivative(double x) {
+        return x > 0.0 ? 1.0 : 0.0; // Derivative of ReLU
+    }
+
+    void initializeWeights() {
+        numLayers = layerSizes.size();
+        weights.resize(numLayers - 1);
+
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::normal_distribution<double> distribution(0.0, 1.0);
+
+        for (int i = 0; i < numLayers - 1; ++i) {
+            weights[i].resize(layerSizes[i + 1]);
+
+            double weightScale = std::sqrt(1.0 / layerSizes[i]); // Xavier initialization scaling
+
+            for (int j = 0; j < layerSizes[i + 1]; ++j) {
+                weights[i][j].resize(layerSizes[i]);
+
+                for (int k = 0; k < layerSizes[i]; ++k) {
+                    weights[i][j][k] = weightScale * distribution(gen);
+                }
+            }
+        }
+    }
+
+    double calculateError(const std::vector<double>& predicted, const std::vector<double>& target) {
+        double error = 0.0;
+        for (int i = 0; i < predicted.size(); ++i) {
+            error += std::pow(target[i] - predicted[i], 2);
+        }
+        return error / 2.0;
+    }
+
+    void saveWeightsToFile(const std::string& filename) {
+        std::ofstream file(filename);
+        if (!file) {
+            std::cout << "Failed to create the file: " << filename << std::endl;
+            return;
+        }
+
+        for (int i = 0; i < numLayers - 1; ++i) {
+            for (int j = 0; j < layerSizes[i + 1]; ++j) {
+                for (int k = 0; k < layerSizes[i]; ++k) {
+                    file << weights[i][j][k] << " ";
+                }
+                file << std::endl;
+            }
+        }
+
+        std::cout << "Saved weights to file: " << filename << std::endl;
+    }
+};
+
+int main() {
+    std::vector<int> layerSizes = {2, 10, 1};
+    double learningRate = 0.01;
+    int numEpochs = 1000;
+
+    FluidLatticeNeuralNetwork network(layerSizes, learningRate);
+
+    std::vector<std::vector<double>> inputs = {
+        {0, 0},
+        {0, 1},
+        {1, 0},
+        {1, 1}
+    };
+
+    std::vector<std::vector<double>> targets = {
+        {0},
+        {1},
+        {1},
+        {0}
+    };
+
+    network.train(inputs, targets, numEpochs);
+
+    // Example usage after training
+    std::vector<double> input = {0, 0};
+    std::vector<double> output = network.predict(input);
+
+    std::cout << "Prediction for input [0, 0]: " << output[0] << std::endl;
+
+    return 0;
+}
